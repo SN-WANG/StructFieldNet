@@ -1,8 +1,8 @@
 {
   "seed": 42,
   "paths": {
-    "dataset_dir": "/Users/wsn/lab/rely_opt/dataset",
-    "output_dir": "/Users/wsn/Documents/StructFieldNet/runs/default"
+    "dataset_dir": "dataset",
+    "output_dir": "runs"
   },
   "data": {
     "train_ratio": 0.8,

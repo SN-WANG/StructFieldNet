@@ -82,7 +82,7 @@ Optional but WSNet-aligned scientific packages:
 Install dependencies with:
 
 ```bash
-/Users/wsn/pyenv/bin/python -m pip install -r requirements.txt
+python -m pip install -r requirements.txt
 ```
 
 ## Dataset Format
@@ -101,10 +101,16 @@ For the current wing benchmark:
 The default configuration expects the dataset to be located at:
 
 ```text
-/Users/wsn/lab/rely_opt/dataset
+StructFieldNet/dataset/
 ```
 
-If your dataset is stored elsewhere, update `paths.dataset_dir` in [`configs/default.json`](configs/default.json).
+The default output directory is:
+
+```text
+StructFieldNet/runs/
+```
+
+The code resolves these relative paths against the project root automatically, so you can launch `main.py` from any working directory.
 
 ## Dataset Notes
 
@@ -167,7 +173,7 @@ python main.py --config configs/default.json --mode eval
 Training artifacts are written to the directory specified by `paths.output_dir`. By default:
 
 ```text
-/Users/wsn/Documents/StructFieldNet/runs/default
+StructFieldNet/runs/
 ```
 
 The trainer saves:

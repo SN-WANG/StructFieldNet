@@ -27,7 +27,7 @@ from structfieldnet.data.wing_dataset import (
 from structfieldnet.losses.field_loss import StructFieldLoss
 from structfieldnet.models.structfieldnet import StructFieldNet
 from structfieldnet.trainers.structfield_trainer import StructFieldTrainer
-from structfieldnet.utils.config import load_json_config
+from structfieldnet.utils.config import load_json_config, resolve_project_paths
 from structfieldnet.utils.hue_logger import hue, logger
 from structfieldnet.utils.seeder import seed_everything
 
@@ -253,7 +253,7 @@ def parse_args() -> argparse.Namespace:
 def main() -> None:
     """Program entry point."""
     args = parse_args()
-    config = load_json_config(Path(args.config))
+    config = resolve_project_paths(load_json_config(Path(args.config)), PROJECT_ROOT)
 
     if args.mode == "train":
         train_pipeline(config)
