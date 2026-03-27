@@ -1,0 +1,59 @@
+{
+  "seed": 42,
+  "paths": {
+    "dataset_dir": "/Users/wsn/lab/rely_opt/dataset",
+    "output_dir": "/Users/wsn/Documents/StructFieldNet/runs/default"
+  },
+  "data": {
+    "train_ratio": 0.8,
+    "val_ratio": 0.1,
+    "test_ratio": 0.1,
+    "batch_size": 1,
+    "num_workers": 0,
+    "pin_memory": true,
+    "verify_fixed_mesh": true,
+    "harmonize_units": true
+  },
+  "normalization": {
+    "coords_norm_range": "bipolar",
+    "normalize_design": true,
+    "normalize_stress": true
+  },
+  "model": {
+    "coord_dim": 3,
+    "design_dim": 25,
+    "output_dim": 1,
+    "hidden_dim": 128,
+    "branch_hidden_dim": 128,
+    "branch_num_layers": 2,
+    "trunk_hidden_dim": 128,
+    "trunk_num_layers": 2,
+    "fusion_hidden_dim": 128,
+    "fusion_num_layers": 1,
+    "depth": 6,
+    "num_heads": 8,
+    "num_slices": 64,
+    "mlp_ratio": 4,
+    "dropout": 0.0
+  },
+  "loss": {
+    "global_weight": 1.0,
+    "hotspot_weight": 1.0,
+    "hotspot_percentile": 0.95,
+    "hotspot_boost": 4.0
+  },
+  "training": {
+    "device": "cuda",
+    "max_epochs": 300,
+    "lr": 0.001,
+    "weight_decay": 1e-05,
+    "gradient_clip_norm": 1.0,
+    "use_amp": true,
+    "compile_model": false,
+    "patience": 50,
+    "scheduler": {
+      "name": "cosine",
+      "eta_min": 1e-06
+    }
+  }
+}
