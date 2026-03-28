@@ -1,9 +1,7 @@
-# Trainer for static stress-field reconstruction
+# Trainer for StructFieldNet
 # Author: Shengning Wang
 
-import json
-from pathlib import Path
-from typing import Dict, Optional, Union
+from typing import Any, Dict, Optional
 
 import numpy as np
 import torch
@@ -11,76 +9,70 @@ from torch import Tensor
 from torch.utils.data import DataLoader
 from tqdm.auto import tqdm
 
-from training.base_criterion import Metrics
 from training.base_trainer import BaseTrainer
-from utils.hue_logger import hue, logger
 
 
 class FieldTrainer(BaseTrainer):
-    """Trainer specialized for design-to-field stress regression."""
+    """Trainer specialized for fixed-mesh stress reconstruction."""
 
-    def __init__(self, *args, metrics: Optional[Metrics] = None, **kwargs) -> None:
-        super().__init__(*args, **kwargs)
-        self.metrics = metrics if metrics is not None else Metrics()
-
-    def _compute_step(self, batch: Dict[str, Tensor]) -> Dict[str, Union[Tensor, float]]:
-        coords = batch["coords"]
-        design = batch["design"]
-        target = batch["stress"]
-
-        pred = self.model(coords, design)
-        loss = self.criterion(pred, target)
-        outputs: Dict[str, Union[Tensor, float]] = {"loss": loss}
-
-        if not self.model.training:
-            stress_scaler = self.scalers.get("stress_scaler")
-            pred_denorm = (
-                stress_scaler.inverse_transform(pred.detach())
-                if stress_scaler is not None
-                else pred.detach()
-            )
-            target_denorm = (
-                stress_scaler.inverse_transform(target.detach())
-                if stress_scaler is not None
-                else target.detach()
-            )
-            outputs.update(self.metrics.compute(pred_denorm, target_denorm))
-
-        return outputs
-
-    def evaluate(
+    def __init__(
         self,
-        loader: DataLoader,
-        checkpoint_path: Optional[Union[str, Path]] = None,
-        save_name: str = "metrics.json",
-    ) -> Dict[str, float]:
-        """Evaluate a checkpoint and save aggregated metrics."""
-        if checkpoint_path is not None:
-            self.load_checkpoint(checkpoint_path)
+        *args: Any,
+        gradient_clip_norm: Optional[float] = None,
+        use_amp: bool = True,
+        **kwargs: Any,
+    ) -> None:
+        super().__init__(*args, **kwargs)
+        self.gradient_clip_norm = gradient_clip_norm if gradient_clip_norm and gradient_clip_norm > 0 else None
+        self.use_amp = bool(use_amp and self.device.type == "cuda")
 
-        self.model.eval()
-        aggregated: Dict[str, list[float]] = {}
+        if hasattr(torch, "amp") and hasattr(torch.amp, "GradScaler"):
+            self.grad_scaler = torch.amp.GradScaler("cuda", enabled=self.use_amp)
+        else:
+            self.grad_scaler = torch.cuda.amp.GradScaler(enabled=self.use_amp)
 
-        with torch.no_grad():
-            progress = tqdm(loader, desc="Evaluating", leave=False, dynamic_ncols=True)
-            for batch in progress:
+    def _move_batch_to_device(self, batch: Dict[str, Any]) -> Dict[str, Any]:
+        return {
+            key: value.to(self.device, non_blocking=True) if isinstance(value, Tensor) else value
+            for key, value in batch.items()
+        }
+
+    def _compute_loss(self, batch: Dict[str, Tensor]) -> Tensor:
+        pred = self.model(batch["coords"], batch["design"])
+        return self.criterion(pred, batch["stress"])
+
+    def _run_epoch(self, loader: DataLoader, is_training: bool) -> float:
+        self.model.train(is_training)
+        losses = []
+
+        context = torch.enable_grad() if is_training else torch.no_grad()
+        with context:
+            pbar = tqdm(loader, desc="Training" if is_training else "Validating", leave=False, dynamic_ncols=True)
+            for batch in pbar:
                 batch = self._move_batch_to_device(batch)
-                outputs = self._compute_step(batch)
-                log_dict = {}
-                for key, value in outputs.items():
-                    scalar = float(value.detach().item()) if isinstance(value, Tensor) else float(value)
-                    aggregated.setdefault(key, []).append(scalar)
-                    if key in {"loss", "mse", "r2", "accuracy"}:
-                        log_dict[key] = f"{scalar:.4e}" if key != "accuracy" else f"{scalar:.2f}"
-                progress.set_postfix(log_dict)
 
-        metrics = {key: float(np.mean(values)) for key, values in aggregated.items()}
-        with open(self.output_dir / save_name, "w", encoding="utf-8") as file:
-            json.dump(metrics, file, indent=2)
+                if is_training:
+                    self.optimizer.zero_grad(set_to_none=True)
 
-        logger.info(
-            f"evaluation finished | mse: {hue.m}{metrics['mse']:.4e}{hue.q}"
-            f" | r2: {hue.m}{metrics['r2']:.4f}{hue.q}"
-            f" | accuracy: {hue.m}{metrics['accuracy']:.2f}%{hue.q}"
-        )
-        return metrics
+                with torch.autocast(device_type="cuda", dtype=torch.float16, enabled=self.use_amp):
+                    loss = self._compute_loss(batch)
+
+                if is_training:
+                    if self.use_amp:
+                        self.grad_scaler.scale(loss).backward()
+                        if self.gradient_clip_norm is not None:
+                            self.grad_scaler.unscale_(self.optimizer)
+                            torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.gradient_clip_norm)
+                        self.grad_scaler.step(self.optimizer)
+                        self.grad_scaler.update()
+                    else:
+                        loss.backward()
+                        if self.gradient_clip_norm is not None:
+                            torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.gradient_clip_norm)
+                        self.optimizer.step()
+
+                loss_value = float(loss.detach().item())
+                losses.append(loss_value)
+                pbar.set_postfix({"loss": f"{loss_value:.4e}"})
+
+        return float(np.mean(losses)) if losses else 0.0

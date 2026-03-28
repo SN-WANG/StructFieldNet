@@ -1,8 +1,7 @@
-# Argument configuration for StructFieldNet
+# Argument Configuration for StructFieldNet
 # Author: Shengning Wang
 
 import argparse
-
 import torch
 
 
@@ -12,173 +11,160 @@ def get_args() -> argparse.Namespace:
         description="StructFieldNet: Design-conditioned structural field reconstruction",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
+    add = parser.add_argument
 
-    general = parser.add_argument_group("General")
-    general.add_argument("--seed", type=int, default=42, help="Random seed for reproducibility.")
-    general.add_argument(
-        "--output_dir",
-        type=str,
-        default="./runs",
-        help="Directory to save checkpoints, logs, metrics, and figures.",
-    )
-    general.add_argument(
+    # ------------------------------------------------------------------
+    # General
+    # ------------------------------------------------------------------
+    add("--seed", type=int, default=42, help="Random seed.")
+    add("--output_dir", type=str, default="./runs", help="Output directory.")
+    add(
         "--mode",
         type=str,
         nargs="+",
         default=["train", "infer", "probe"],
         choices=["train", "infer", "probe"],
-        help="Execution phases to run.",
+        help="Pipelines to run.",
     )
-    general.add_argument(
+    add(
         "--device",
         type=str,
         default="cuda" if torch.cuda.is_available() else "cpu",
         help="Computation device.",
     )
 
-    data = parser.add_argument_group("Data")
-    data.add_argument("--data_dir", type=str, default="./dataset", help="Dataset root directory.")
-    data.add_argument("--coord_dim", type=int, default=3, help="Coordinate dimension.")
-    data.add_argument("--design_dim", type=int, default=25, help="Thickness design vector dimension.")
-    data.add_argument("--output_dim", type=int, default=1, help="Output field dimension.")
-    data.add_argument("--train_ratio", type=float, default=0.70, help="Training split ratio.")
-    data.add_argument("--val_ratio", type=float, default=0.15, help="Validation split ratio.")
-    data.add_argument("--test_ratio", type=float, default=0.15, help="Test split ratio.")
-    data.add_argument("--batch_size", type=int, default=2, help="Mini-batch size.")
-    data.add_argument("--num_workers", type=int, default=0, help="Number of DataLoader workers.")
-    data.add_argument(
+    # ------------------------------------------------------------------
+    # Data
+    # ------------------------------------------------------------------
+    add("--data_dir", type=str, default="./dataset", help="Dataset directory.")
+    add("--coord_dim", type=int, default=3, help="Coordinate dimension.")
+    add("--design_dim", type=int, default=25, help="Design dimension.")
+    add("--output_dim", type=int, default=1, help="Field output dimension.")
+    add("--train_ratio", type=float, default=0.70, help="Train split ratio.")
+    add("--val_ratio", type=float, default=0.15, help="Validation split ratio.")
+    add("--test_ratio", type=float, default=0.15, help="Test split ratio.")
+    add("--batch_size", type=int, default=4, help="Mini-batch size.")
+    add("--num_workers", type=int, default=0, help="DataLoader workers.")
+    add(
         "--pin_memory",
         action=argparse.BooleanOptionalAction,
         default=True,
-        help="Enable pinned-memory DataLoader transfer.",
+        help="Enable pinned memory.",
     )
-    data.add_argument(
+    add(
         "--verify_fixed_mesh",
         action=argparse.BooleanOptionalAction,
         default=True,
-        help="Check that all cases share the same reference mesh.",
+        help="Check fixed-mesh consistency.",
     )
-    data.add_argument(
+    add(
         "--coord_norm_range",
         type=str,
         default="bipolar",
         choices=["unit", "bipolar"],
-        help="Target normalization range for coordinates.",
+        help="Coordinate normalization range.",
     )
-    data.add_argument(
+    add(
         "--normalize_design",
         action=argparse.BooleanOptionalAction,
         default=True,
-        help="Standardize the thickness design vector.",
+        help="Normalize design vectors.",
     )
-    data.add_argument(
+    add(
         "--normalize_stress",
         action=argparse.BooleanOptionalAction,
         default=True,
-        help="Standardize the scalar stress target.",
+        help="Normalize target fields.",
     )
-    data.add_argument(
-        "--stress_channel_dim",
-        type=int,
-        default=1,
-        help=(
-            "Channel dimension used for stress standardization. "
-            "For stress tensors shaped (num_cases, num_nodes, num_channels), "
-            "the default 1 performs node-wise normalization on a fixed mesh."
-        ),
-    )
+    add("--stress_channel_dim", type=int, default=-1, help="Channel dimension for stress scaling.")
 
-    model = parser.add_argument_group("Model")
-    model.add_argument(
-        "--model_type",
-        type=str,
-        default="structfieldnet",
-        choices=["structfieldnet"],
-        help="Neural operator architecture.",
-    )
-    model.add_argument("--depth", type=int, default=4, help="Number of Physics-Attention blocks.")
-    model.add_argument("--width", type=int, default=64, help="Hidden feature dimension.")
-    model.add_argument("--num_slices", type=int, default=32, help="Number of slice tokens.")
-    model.add_argument("--num_heads", type=int, default=4, help="Number of attention heads.")
-    model.add_argument("--mlp_ratio", type=int, default=4, help="Expansion ratio in the feed-forward sublayer.")
-    model.add_argument("--branch_hidden_dim", type=int, default=64, help="Hidden dimension of the branch MLP.")
-    model.add_argument("--branch_layers", type=int, default=2, help="Number of branch MLP layers.")
-    model.add_argument("--trunk_hidden_dim", type=int, default=64, help="Hidden dimension of the trunk MLP.")
-    model.add_argument("--trunk_layers", type=int, default=2, help="Number of trunk MLP layers.")
-    model.add_argument("--lifting_hidden_dim", type=int, default=64, help="Hidden dimension of the lifting MLP.")
-    model.add_argument("--lifting_layers", type=int, default=2, help="Number of lifting MLP layers.")
-    model.add_argument("--dropout", type=float, default=0.0, help="Dropout rate.")
+    # ------------------------------------------------------------------
+    # Model
+    # ------------------------------------------------------------------
+    add("--model_type", type=str, default="structfieldnet", choices=["structfieldnet"])
+    add("--depth", type=int, default=4, help="Number of operator blocks.")
+    add("--width", type=int, default=64, help="Hidden width.")
+    add("--num_slices", type=int, default=32, help="Number of slice tokens.")
+    add("--num_heads", type=int, default=4, help="Number of attention heads.")
+    add("--num_bases", type=int, default=32, help="Number of fixed-mesh basis fields.")
+    add("--mlp_ratio", type=int, default=4, help="FFN expansion ratio.")
+    add("--branch_hidden_dim", type=int, default=64, help="Design encoder width.")
+    add("--branch_layers", type=int, default=2, help="Design encoder depth.")
+    add("--trunk_hidden_dim", type=int, default=64, help="Coordinate encoder width.")
+    add("--trunk_layers", type=int, default=2, help="Coordinate encoder depth.")
+    add("--lifting_hidden_dim", type=int, default=64, help="Fusion width.")
+    add("--lifting_layers", type=int, default=2, help="Fusion depth.")
+    add("--dropout", type=float, default=0.0, help="Dropout.")
 
-    optim = parser.add_argument_group("Optimization")
-    optim.add_argument("--lr", type=float, default=5e-4, help="Initial learning rate for AdamW.")
-    optim.add_argument("--weight_decay", type=float, default=1e-4, help="Weight decay coefficient.")
-    optim.add_argument("--max_epochs", type=int, default=100, help="Maximum training epochs.")
-    optim.add_argument("--patience", type=int, default=80, help="Early-stopping patience.")
-    optim.add_argument("--eta_min", type=float, default=1e-6, help="Minimum cosine-annealing learning rate.")
-    optim.add_argument(
+    # ------------------------------------------------------------------
+    # Training
+    # ------------------------------------------------------------------
+    add("--lr", type=float, default=2e-4, help="Learning rate.")
+    add("--weight_decay", type=float, default=1e-5, help="Weight decay.")
+    add("--max_epochs", type=int, default=40, help="Maximum epochs.")
+    add("--patience", type=int, default=6, help="Early stopping patience.")
+    add("--eta_min", type=float, default=1e-6, help="Minimum learning rate.")
+    add(
         "--gradient_clip_norm",
         type=float,
         default=1.0,
-        help="Gradient clipping norm. Set <= 0 to disable.",
+        help="Gradient clipping norm.",
     )
-    optim.add_argument(
+    add(
         "--use_amp",
         action=argparse.BooleanOptionalAction,
         default=True,
-        help="Enable automatic mixed precision on CUDA.",
+        help="Enable AMP on CUDA.",
     )
-    optim.add_argument(
+    add(
         "--compile_model",
         action=argparse.BooleanOptionalAction,
         default=False,
-        help="Compile the model with torch.compile when available.",
+        help="Use torch.compile.",
     )
 
-    evaluation = parser.add_argument_group("Evaluation")
-    evaluation.add_argument(
+    # ------------------------------------------------------------------
+    # Evaluation
+    # ------------------------------------------------------------------
+    add(
         "--hotspot_percentile",
         type=float,
         default=0.95,
-        help="Percentile threshold for hotspot-oriented evaluation.",
+        help="Percentile for hotspot overlap.",
     )
 
-    visualization = parser.add_argument_group("Visualization")
-    visualization.add_argument(
-        "--mesh_mode",
-        type=str,
-        default="auto",
-        choices=["auto", "delaunay", "point_cloud"],
-        help="Mesh rendering strategy used by PyVista.",
-    )
-    visualization.add_argument(
+    # ------------------------------------------------------------------
+    # Visualization
+    # ------------------------------------------------------------------
+    add(
         "--off_screen",
         action=argparse.BooleanOptionalAction,
         default=True,
-        help="Use off-screen rendering for headless environments.",
+        help="Use off-screen rendering.",
     )
-    visualization.add_argument(
+    add(
         "--render_visualization",
         action=argparse.BooleanOptionalAction,
         default=True,
-        help="Generate PyVista comparison figures during inference.",
+        help="Render case figures.",
     )
-    visualization.add_argument(
+    add(
         "--render_metric_plots",
         action=argparse.BooleanOptionalAction,
         default=True,
-        help="Generate Matplotlib training and metric summary figures.",
+        help="Render metric plots.",
     )
-    visualization.add_argument(
-        "--render_point_size",
-        type=float,
-        default=8.0,
-        help="Point size when point-cloud rendering is used.",
-    )
-    visualization.add_argument(
-        "--screenshot_scale",
-        type=int,
-        default=1,
-        help="Supersampling scale factor for saved screenshots.",
-    )
+    add("--render_point_size", type=float, default=7.0, help="Point size.")
+    add("--screenshot_scale", type=int, default=1, help="Screenshot scale.")
 
-    return parser.parse_args()
+    args = parser.parse_args()
+
+    split_sum = args.train_ratio + args.val_ratio + args.test_ratio
+    if abs(split_sum - 1.0) > 1e-6:
+        raise ValueError(f"train_ratio + val_ratio + test_ratio must be 1.0, got {split_sum:.6f}")
+    if args.patience >= args.max_epochs:
+        raise ValueError("patience must be smaller than max_epochs")
+    if args.width % args.num_heads != 0:
+        raise ValueError("width must be divisible by num_heads")
+
+    return args
