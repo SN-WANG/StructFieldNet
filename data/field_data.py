@@ -18,6 +18,13 @@ from utils.scaler import (
 )
 
 
+def _restore_sample_rank(x: Tensor, target_ndim: int) -> Tensor:
+    """Remove leading singleton dimensions introduced by scaler broadcasting."""
+    while x.ndim > target_ndim and x.shape[0] == 1:
+        x = x.squeeze(0)
+    return x
+
+
 class FieldData(Dataset):
     """Dataset for static structural field reconstruction samples."""
 
@@ -239,10 +246,13 @@ class ScaledFieldDataset(Dataset):
         coord_scaler = self.scalers.get("coord_scaler")
         design_scaler = self.scalers.get("design_scaler")
         stress_scaler = self.scalers.get("stress_scaler")
+        coords = coord_scaler.transform(sample["coords"]) if coord_scaler is not None else sample["coords"]
+        design = design_scaler.transform(sample["design"]) if design_scaler is not None else sample["design"]
+        stress = stress_scaler.transform(sample["stress"]) if stress_scaler is not None else sample["stress"]
         return {
-            "coords": coord_scaler.transform(sample["coords"]) if coord_scaler is not None else sample["coords"],
-            "design": design_scaler.transform(sample["design"]) if design_scaler is not None else sample["design"],
-            "stress": stress_scaler.transform(sample["stress"]) if stress_scaler is not None else sample["stress"],
+            "coords": _restore_sample_rank(coords, sample["coords"].ndim),
+            "design": _restore_sample_rank(design, sample["design"].ndim),
+            "stress": _restore_sample_rank(stress, sample["stress"].ndim),
             "case_name": sample["case_name"],
         }
 

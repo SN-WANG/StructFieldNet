@@ -112,7 +112,7 @@ def get_args() -> argparse.Namespace:
     optim = parser.add_argument_group("Optimization")
     optim.add_argument("--lr", type=float, default=5e-4, help="Initial learning rate for AdamW.")
     optim.add_argument("--weight_decay", type=float, default=1e-4, help="Weight decay coefficient.")
-    optim.add_argument("--max_epochs", type=int, default=400, help="Maximum training epochs.")
+    optim.add_argument("--max_epochs", type=int, default=100, help="Maximum training epochs.")
     optim.add_argument("--patience", type=int, default=80, help="Early-stopping patience.")
     optim.add_argument("--eta_min", type=float, default=1e-6, help="Minimum cosine-annealing learning rate.")
     optim.add_argument(
