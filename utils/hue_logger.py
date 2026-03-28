@@ -1,19 +1,20 @@
 # A colorful logging utility with ANSI support
 # Author: Shengning Wang
 
-import sys
 import logging
+import sys
 
 try:
     from tqdm.auto import tqdm
+
     _HAS_TQDM = True
-except ImportError:
+except ImportError:  # pragma: no cover - tqdm is an explicit dependency
     tqdm = None
     _HAS_TQDM = False
 
 
 class HueLogger:
-    """Create a tqdm-friendly logger with ANSI colors."""
+    """Colorful logger with tqdm-compatible output."""
 
     b = "\033[1;34m"
     c = "\033[1;36m"
@@ -24,12 +25,6 @@ class HueLogger:
     q = "\033[0m"
 
     def __init__(self, name: str = __name__, level: int = logging.INFO) -> None:
-        """Initialize the logger instance.
-
-        Args:
-            name: Logger name.
-            level: Logging level.
-        """
         self.logger = logging.getLogger(name)
         self.logger.setLevel(level)
         self.logger.propagate = False
@@ -37,16 +32,13 @@ class HueLogger:
         if self.logger.hasHandlers():
             self.logger.handlers.clear()
 
-        handler = self._build_handler()
-        self.logger.addHandler(handler)
+        self.logger.addHandler(self._build_handler())
 
     def _build_handler(self) -> logging.StreamHandler:
-        """Build a stdout stream handler.
-
-        Returns:
-            Configured logging handler.
-        """
-        log_format = f"\033[90m%(asctime)s{self.q} - {self.b}%(levelname)s{self.q} - %(message)s"
+        log_format = (
+            f"\033[90m%(asctime)s{self.q} - "
+            f"{self.b}%(levelname)s{self.q} - %(message)s"
+        )
         formatter = logging.Formatter(log_format, "%H:%M:%S")
         handler = logging.StreamHandler(sys.stdout)
 

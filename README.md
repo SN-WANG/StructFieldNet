@@ -1,213 +1,134 @@
 # StructFieldNet
 
-StructFieldNet is a PyTorch implementation for **scalar nodal von Mises stress field reconstruction** on an unstructured wing mesh. The model follows the methodology described in the accompanying paper: a **DeepONet-style design-to-node lifting module** is coupled with a **Transolver-style Physics-Attention backbone** to learn the mapping
+[![Role](https://img.shields.io/badge/Role-Research%20Code-0f766e)](https://github.com/SN-WANG/StructFieldNet)
+[![Python](https://img.shields.io/badge/Python-3.10%2B-blue)](https://www.python.org/)
+[![License](https://img.shields.io/badge/License-MIT-yellow)](LICENSE)
 
-\[
-(\mathbf{P}, \mathbf{d}) \rightarrow \mathbf{s},
-\]
+**StructFieldNet** is the structural-field repository in the WSNet family. It inherits the same lightweight model, training, and utility foundations from [WSNet](https://github.com/SN-WANG/WSNet), while focusing on fixed-mesh stress field reconstruction from grouped design parameters.
 
-where:
+## 📌 Overview
 
-- `P` is the reference mesh coordinate field,
-- `d` is the grouped thickness design vector,
-- `s` is the scalar nodal stress field under the gravity loading condition.
+StructFieldNet keeps the full workflow for this task in one place:
+dataset handling, model training, case-wise inference, visualization, and metric export.
 
-The repository is organized as a lightweight research codebase aligned with the structure and dependencies of the author's broader `WSNet` ecosystem.
+The current scope includes:
 
-## Highlights
+- design-conditioned structural field reconstruction
+- fixed-mesh stress prediction
+- end-to-end training and inference workflows
+- case-wise visualization and diagnostic metrics
 
-- Clean PyTorch implementation of **StructFieldNet**
-- Modular project layout for **data**, **models**, **losses**, **trainers**, and **utilities**
-- JSON-based experiment configuration
-- Mixed-precision-ready training loop with checkpointing and early stopping
-- Built-in reproducibility utilities (`seed_everything`)
-- Automatic handling of occasional **mixed SI-prefix units** in ANSYS exports
-- Minimal dependency footprint, consistent with the existing WSNet environment
+## ✨ Highlights
 
-## Method Overview
+- Full-field stress reconstruction from grouped structural design parameters
+- `StructFieldNet` as the main model for fixed-mesh structural learning
+- Unified `main.py` workflow for probe, train, and infer
+- Deterministic dataset splitting and normalization pipeline
+- Stable MSE training with mixed precision, gradient clipping, and checkpointing
+- Case-wise evaluation with `mse`, `rmse`, `mae`, `r2`, `accuracy`, and hotspot-oriented metrics
+- PyVista comparison figures for ground truth, prediction, and absolute error
 
-StructFieldNet consists of four main stages:
-
-1. **Design-to-node feature lifting**
-   - A branch MLP encodes the global thickness vector `d`.
-   - A trunk MLP encodes the node coordinates `P`.
-   - The two embeddings are fused into node-wise latent features.
-
-2. **Physics-Attention backbone**
-   - Multiple Transolver-style Physics-Attention blocks operate on the node features.
-   - Each block performs slice assignment, slice aggregation, slice self-attention, and node-wise residual updates.
-
-3. **Output projection**
-   - A linear head predicts the scalar nodal stress at every mesh node.
-
-4. **Field-aware supervision**
-   - Training uses a global field loss and a hotspot-weighted loss to improve accuracy in high-stress regions.
-
-## Repository Structure
+## 🧱 Repository Layout
 
 ```text
 StructFieldNet/
-├── configs/
-│   └── default.json
-├── src/
-│   └── structfieldnet/
-│       ├── data/
-│       ├── losses/
-│       ├── models/
-│       ├── trainers/
-│       └── utils/
-├── tests/
-├── main.py
+├── main.py                  # Unified entry point for probe / train / infer
+├── config.py                # Command-line arguments and experiment configuration
+├── models/
+│   └── structfield_net.py
+├── data/
+│   ├── field_data.py
+│   ├── field_plot.py
+│   └── field_vis.py
+├── training/
+│   ├── base_trainer.py
+│   ├── base_criterion.py
+│   └── field_trainer.py
+├── utils/
+│   ├── scaler.py
+│   ├── hue_logger.py
+│   ├── seeder.py
+│   └── sweep.py
+├── requirements.txt
 ├── README.md
-└── requirements.txt
+└── LICENSE
 ```
 
-## Requirements
+## 🚀 Running Experiments
 
-The code is designed to stay close to the dependency set already used in `WSNet`.
-
-Core packages:
-
-- `torch`
-- `numpy`
-- `tqdm`
-
-Optional but WSNet-aligned scientific packages:
-
-- `scipy`
-- `pandas`
-- `matplotlib`
-- `pyvista`
-
-Install dependencies with:
+### Clone the repository
 
 ```bash
-python -m pip install -r requirements.txt
-```
-
-## Dataset Format
-
-Each case is stored as one `.pt` file and must contain exactly three tensors:
-
-- `coords`: `FloatTensor` of shape `(N, 3)`
-- `design`: `FloatTensor` of shape `(M,)`
-- `stress`: `FloatTensor` of shape `(N, 1)`
-
-For the current wing benchmark:
-
-- `M = 25`
-- `N = 11234`
-
-The default configuration expects the dataset to be located at:
-
-```text
-StructFieldNet/dataset/
-```
-
-The default output directory is:
-
-```text
-StructFieldNet/runs/
-```
-
-The code resolves these relative paths against the project root automatically, so you can launch `main.py` from any working directory.
-
-## Dataset Notes
-
-The current ANSYS export contains one case with a different SI-prefix scale from the rest of the dataset:
-
-- coordinates: millimeter-scale export instead of meter-scale export
-- stress: MPa-scale export instead of Pa-scale export
-
-To keep the training pipeline robust, the dataset loader performs **automatic SI-prefix harmonization** before mesh verification and normalization. This correction is conservative:
-
-- it only applies when the mismatch spans at least one full decade in log-space
-- it selects the closest multiplier from standard SI-prefix candidates (`1e-12` to `1e12`)
-
-This behavior can be toggled with:
-
-```json
-"harmonize_units": true
-```
-
-in the data section of the config.
-
-## Configuration
-
-All experiment settings are stored in [`configs/default.json`](configs/default.json), including:
-
-- dataset paths
-- train/validation/test split ratios
-- normalization settings
-- model width and depth
-- loss weights
-- optimizer and scheduler hyperparameters
-- training device and AMP options
-
-Important defaults:
-
-- coordinate normalization: `[-1, 1]`
-- design normalization: standardization
-- stress normalization: standardization
-- mesh consistency check: enabled
-- unit harmonization: enabled
-
-## Quick Start
-
-### Train
-
-```bash
+git clone https://github.com/SN-WANG/StructFieldNet.git
 cd StructFieldNet
-python main.py --config configs/default.json --mode train
 ```
 
-### Evaluate
+### Install the project requirements
 
 ```bash
-cd StructFieldNet
-python main.py --config configs/default.json --mode eval
+pip install -r requirements.txt
 ```
 
-## Output Artifacts
+### Probe GPU memory before training
 
-Training artifacts are written to the directory specified by `paths.output_dir`. By default:
+```bash
+python main.py --mode probe --data_dir ./dataset --output_dir ./runs
+```
+
+### Train StructFieldNet
+
+```bash
+python main.py \
+  --mode train \
+  --data_dir ./dataset \
+  --output_dir ./runs
+```
+
+### Run inference and generate visualizations
+
+```bash
+python main.py \
+  --mode infer \
+  --data_dir ./dataset \
+  --output_dir ./runs
+```
+
+## 📂 Expected Data Format
 
 ```text
-StructFieldNet/runs/
+dataset/
+├── dp1.pt
+├── dp2.pt
+├── dp3.pt
+└── ...
 ```
 
-The trainer saves:
+Each case file should be a PyTorch dictionary containing:
 
-- `config.json`: frozen experiment configuration
-- `splits.json`: train/validation/test case split
-- `last.pt`: latest checkpoint
-- `best.pt`: best validation checkpoint
-- `history.json`: epoch-wise training history
-- `test_metrics.json`: evaluation metrics on the test split
+- `coords`: tensor of shape `(N, 3)`
+- `design`: tensor of shape `(25,)`
+- `stress`: tensor of shape `(N, 1)`
 
-## Reproducibility
+All samples are assumed to share the same reference mesh coordinates.
 
-The code uses the local `seed_everything` utility to fix:
+## 🔗 Relationship to WSNet
 
-- Python random state
-- NumPy random state
-- PyTorch CPU and CUDA random states
-- cuDNN deterministic behavior
+StructFieldNet is built on top of [WSNet](https://github.com/SN-WANG/WSNet).
+WSNet keeps the reusable core modules, while StructFieldNet keeps the structural dataset pipeline, task-specific model entry point, and experiment workflow.
 
-The global seed is configured in [`configs/default.json`](configs/default.json).
+## 📚 Citation
 
-## Verification Status
+If this repository is useful in your work, please cite it as a software project.
 
-The current codebase has been checked with:
+```bibtex
+@software{structfieldnet2026,
+  author = {Shengning Wang},
+  title = {StructFieldNet},
+  year = {2026},
+  url = {https://github.com/SN-WANG/StructFieldNet}
+}
+```
 
-- module compilation via `python -m compileall`
-- real-data dataloader construction
-- one-batch forward pass
-- one-batch loss computation
-- one-batch backward pass
+## 📄 License
 
-This verifies that the main training path is connected correctly for the provided dataset format.
-
-## Citation
-
-If you use this repository in academic work, please cite the corresponding StructFieldNet paper once it is publicly available.
+This project is released under the MIT License. See [LICENSE](LICENSE) for details.
