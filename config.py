@@ -77,6 +77,16 @@ def get_args() -> argparse.Namespace:
         default=True,
         help="Standardize the scalar stress target.",
     )
+    data.add_argument(
+        "--stress_channel_dim",
+        type=int,
+        default=1,
+        help=(
+            "Channel dimension used for stress standardization. "
+            "For stress tensors shaped (num_cases, num_nodes, num_channels), "
+            "the default 1 performs node-wise normalization on a fixed mesh."
+        ),
+    )
 
     model = parser.add_argument_group("Model")
     model.add_argument(
@@ -86,16 +96,16 @@ def get_args() -> argparse.Namespace:
         choices=["structfieldnet"],
         help="Neural operator architecture.",
     )
-    model.add_argument("--depth", type=int, default=6, help="Number of Physics-Attention blocks.")
-    model.add_argument("--width", type=int, default=128, help="Hidden feature dimension.")
-    model.add_argument("--num_slices", type=int, default=64, help="Number of slice tokens.")
-    model.add_argument("--num_heads", type=int, default=8, help="Number of attention heads.")
+    model.add_argument("--depth", type=int, default=4, help="Number of Physics-Attention blocks.")
+    model.add_argument("--width", type=int, default=64, help="Hidden feature dimension.")
+    model.add_argument("--num_slices", type=int, default=32, help="Number of slice tokens.")
+    model.add_argument("--num_heads", type=int, default=4, help="Number of attention heads.")
     model.add_argument("--mlp_ratio", type=int, default=4, help="Expansion ratio in the feed-forward sublayer.")
-    model.add_argument("--branch_hidden_dim", type=int, default=128, help="Hidden dimension of the branch MLP.")
+    model.add_argument("--branch_hidden_dim", type=int, default=64, help="Hidden dimension of the branch MLP.")
     model.add_argument("--branch_layers", type=int, default=2, help="Number of branch MLP layers.")
-    model.add_argument("--trunk_hidden_dim", type=int, default=128, help="Hidden dimension of the trunk MLP.")
+    model.add_argument("--trunk_hidden_dim", type=int, default=64, help="Hidden dimension of the trunk MLP.")
     model.add_argument("--trunk_layers", type=int, default=2, help="Number of trunk MLP layers.")
-    model.add_argument("--lifting_hidden_dim", type=int, default=128, help="Hidden dimension of the lifting MLP.")
+    model.add_argument("--lifting_hidden_dim", type=int, default=64, help="Hidden dimension of the lifting MLP.")
     model.add_argument("--lifting_layers", type=int, default=2, help="Number of lifting MLP layers.")
     model.add_argument("--dropout", type=float, default=0.0, help="Dropout rate.")
 

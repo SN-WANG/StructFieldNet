@@ -33,8 +33,17 @@ class FieldTrainer(BaseTrainer):
         outputs: Dict[str, Union[Tensor, float]] = {"loss": loss}
 
         if not self.model.training:
-            pred_denorm = self.scalers["stress_scaler"].inverse_transform(pred.detach())
-            target_denorm = self.scalers["stress_scaler"].inverse_transform(target.detach())
+            stress_scaler = self.scalers.get("stress_scaler")
+            pred_denorm = (
+                stress_scaler.inverse_transform(pred.detach())
+                if stress_scaler is not None
+                else pred.detach()
+            )
+            target_denorm = (
+                stress_scaler.inverse_transform(target.detach())
+                if stress_scaler is not None
+                else target.detach()
+            )
             outputs.update(self.metrics.compute(pred_denorm, target_denorm))
 
         return outputs

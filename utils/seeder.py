@@ -2,22 +2,25 @@
 # Author: Shengning Wang
 
 import random
-
 import numpy as np
 
 try:
     import torch
-
     _HAS_TORCH = True
-except ImportError:  # pragma: no cover - torch is an explicit dependency
-    torch = None
+except ImportError:
     _HAS_TORCH = False
+    torch = None
 
 from utils.hue_logger import hue, logger
 
 
 def seed_everything(seed: int = 42) -> None:
-    """Set all available random seeds for reproducibility."""
+    """
+    Sets the seed for generating random numbers to ensure reproducibility.
+
+    Args:
+        seed (int): The seed value.
+    """
     random.seed(seed)
     np.random.seed(seed)
 

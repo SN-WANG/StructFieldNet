@@ -13,7 +13,6 @@ from tqdm.auto import tqdm
 
 from utils.hue_logger import hue, logger
 from utils.scaler import (
-    IdentityScalerTensor,
     MinMaxScalerTensor,
     StandardScalerTensor,
 )
@@ -237,10 +236,13 @@ class ScaledFieldDataset(Dataset):
 
     def __getitem__(self, idx: int) -> Dict[str, Union[Tensor, str]]:
         sample = self.dataset[idx]
+        coord_scaler = self.scalers.get("coord_scaler")
+        design_scaler = self.scalers.get("design_scaler")
+        stress_scaler = self.scalers.get("stress_scaler")
         return {
-            "coords": self.scalers["coord_scaler"].transform(sample["coords"]),
-            "design": self.scalers["design_scaler"].transform(sample["design"]),
-            "stress": self.scalers["stress_scaler"].transform(sample["stress"]),
+            "coords": coord_scaler.transform(sample["coords"]) if coord_scaler is not None else sample["coords"],
+            "design": design_scaler.transform(sample["design"]) if design_scaler is not None else sample["design"],
+            "stress": stress_scaler.transform(sample["stress"]) if stress_scaler is not None else sample["stress"],
             "case_name": sample["case_name"],
         }
 
@@ -250,24 +252,26 @@ def fit_scalers(
     coord_norm_range: str = "bipolar",
     normalize_design: bool = True,
     normalize_stress: bool = True,
+    stress_channel_dim: int = 1,
 ) -> Dict[str, object]:
     """Fit coordinate, design, and stress scalers from the training set."""
     stacked = dataset.stack_tensors()
 
-    coord_scaler = MinMaxScalerTensor(norm_range=coord_norm_range).fit(stacked["coords"], channel_dim=-1)
+    scalers: Dict[str, object] = {
+        "coord_scaler": MinMaxScalerTensor(norm_range=coord_norm_range).fit(
+            stacked["coords"],
+            channel_dim=-1,
+        )
+    }
 
     if normalize_design:
-        design_scaler = StandardScalerTensor().fit(stacked["design"], channel_dim=-1)
-    else:
-        design_scaler = IdentityScalerTensor().fit(stacked["design"], channel_dim=-1)
+        scalers["design_scaler"] = StandardScalerTensor().fit(stacked["design"], channel_dim=-1)
 
     if normalize_stress:
-        stress_scaler = StandardScalerTensor().fit(stacked["stress"], channel_dim=-1)
-    else:
-        stress_scaler = IdentityScalerTensor().fit(stacked["stress"], channel_dim=-1)
+        stress_channel_dim = stress_channel_dim % stacked["stress"].ndim
+        scalers["stress_scaler"] = StandardScalerTensor().fit(
+            stacked["stress"],
+            channel_dim=stress_channel_dim,
+        )
 
-    return {
-        "coord_scaler": coord_scaler,
-        "design_scaler": design_scaler,
-        "stress_scaler": stress_scaler,
-    }
+    return scalers

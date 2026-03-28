@@ -16,7 +16,10 @@ from models.structfield_net import StructFieldNet
 from training.base_criterion import MSECriterion, Metrics
 from training.field_trainer import FieldTrainer
 from utils.hue_logger import hue, logger
-from utils.scaler import IdentityScalerTensor, MinMaxScalerTensor, StandardScalerTensor
+from utils.scaler import (
+    MinMaxScalerTensor,
+    StandardScalerTensor,
+)
 from utils.seeder import seed_everything
 
 
@@ -56,6 +59,7 @@ def _build_loaders(args, train_raw: FieldData, val_raw: FieldData, test_raw: Fie
         coord_norm_range=args.coord_norm_range,
         normalize_design=args.normalize_design,
         normalize_stress=args.normalize_stress,
+        stress_channel_dim=args.stress_channel_dim,
     )
 
     train_dataset = ScaledFieldDataset(train_raw, scalers)
@@ -149,26 +153,41 @@ def _save_run_config(args, output_dir: Path, split_manifest: Dict[str, list[str]
 
 
 def _restore_scalers(checkpoint: Dict[str, object], args) -> Dict[str, object]:
+    scalers: Dict[str, object] = {}
+
     coord_scaler = MinMaxScalerTensor(norm_range=args.coord_norm_range)
     coord_scaler.load_state_dict(checkpoint["scaler_state_dict"]["coord_scaler"])
+    scalers["coord_scaler"] = coord_scaler
 
-    if args.normalize_design:
+    if args.normalize_design and "design_scaler" in checkpoint["scaler_state_dict"]:
         design_scaler = StandardScalerTensor()
-    else:
-        design_scaler = IdentityScalerTensor()
-    design_scaler.load_state_dict(checkpoint["scaler_state_dict"]["design_scaler"])
+        design_scaler.load_state_dict(checkpoint["scaler_state_dict"]["design_scaler"])
+        scalers["design_scaler"] = design_scaler
 
-    if args.normalize_stress:
+    if args.normalize_stress and "stress_scaler" in checkpoint["scaler_state_dict"]:
         stress_scaler = StandardScalerTensor()
-    else:
-        stress_scaler = IdentityScalerTensor()
-    stress_scaler.load_state_dict(checkpoint["scaler_state_dict"]["stress_scaler"])
+        stress_state = checkpoint["scaler_state_dict"]["stress_scaler"]
+        if "channel_dim" not in stress_state:
+            stress_scaler.mean = stress_state["mean"]
+            stress_scaler.std = stress_state["std"]
+            stress_scaler.channel_dim = args.stress_channel_dim
+        else:
+            stress_scaler.load_state_dict(stress_state)
 
-    return {
-        "coord_scaler": coord_scaler,
-        "design_scaler": design_scaler,
-        "stress_scaler": stress_scaler,
-    }
+        if getattr(stress_scaler, "channel_dim", None) is not None:
+            stress_mean = getattr(stress_scaler, "mean", None)
+            reference_ndim = stress_mean.ndim if stress_mean is not None else max(args.stress_channel_dim + 1, 1)
+            expected_channel_dim = args.stress_channel_dim % reference_ndim
+            if stress_scaler.channel_dim != expected_channel_dim:
+                logger.warning(
+                    "stress scaler channel_dim in checkpoint "
+                    f"({stress_scaler.channel_dim}) does not match current config "
+                    f"({expected_channel_dim}). If you want node-wise normalization, "
+                    "please retrain from scratch."
+                )
+        scalers["stress_scaler"] = stress_scaler
+
+    return scalers
 
 
 def train_pipeline(args) -> None:
@@ -245,8 +264,13 @@ def inference_pipeline(args) -> None:
             stress_std = batch["stress"].to(device)
 
             pred_std = model.predict(coords_std, design_std)
-            pred = scalers["stress_scaler"].inverse_transform(pred_std).cpu().squeeze(0)
-            target = scalers["stress_scaler"].inverse_transform(stress_std).cpu().squeeze(0)
+            stress_scaler = scalers.get("stress_scaler")
+            pred = (
+                stress_scaler.inverse_transform(pred_std) if stress_scaler is not None else pred_std
+            ).cpu().squeeze(0)
+            target = (
+                stress_scaler.inverse_transform(stress_std) if stress_scaler is not None else stress_std
+            ).cpu().squeeze(0)
             coords_raw = scalers["coord_scaler"].inverse_transform(coords_std).cpu().squeeze(0)
 
             metrics = metrics_evaluator.compute(pred, target)
