@@ -35,21 +35,20 @@ StructFieldNet/
 ├── main.py                  # Unified entry point for probe / train / infer
 ├── config.py                # Command-line arguments and experiment configuration
 ├── models/
-│   └── structfield_net.py
+│   └── fieldnet.py
 ├── data/
 │   ├── field_data.py
+│   ├── field_metrics.py
 │   ├── field_plot.py
 │   └── field_vis.py
 ├── training/
 │   ├── base_trainer.py
-│   ├── base_criterion.py
 │   └── field_trainer.py
 ├── utils/
 │   ├── scaler.py
 │   ├── hue_logger.py
 │   ├── seeder.py
-│   └── sweep.py
-├── requirements.txt
+│   └── sweeper.py
 ├── README.md
 └── LICENSE
 ```
