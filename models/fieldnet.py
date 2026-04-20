@@ -265,47 +265,6 @@ class StructFieldNet(nn.Module):
             nn.init.ones_(module.weight)
             nn.init.zeros_(module.bias)
 
-    def _encode_tokens(self, coords: Tensor, design: Tensor) -> Tensor:
-        """
-        Build node tokens from coordinates and design conditions.
-
-        Args:
-            coords (Tensor): Mesh coordinates. (B, N, D).
-            design (Tensor): Design vectors. (B, C_DESIGN).
-
-        Returns:
-            Tensor: Node tokens. (B, N, C).
-        """
-        design_tokens = self.design_encoder(design).unsqueeze(1)
-        coord_tokens = self.coord_encoder(coords)
-        return self.fusion(design_tokens * coord_tokens)
-
-    def _decode_coarse_field(self, design: Tensor) -> Tensor:
-        """
-        Reconstruct the coarse basis field from the design vector.
-
-        Args:
-            design (Tensor): Design vectors. (B, C_DESIGN).
-
-        Returns:
-            Tensor: Coarse field. (B, N, C_OUT).
-        """
-        basis_coeff = self.basis_coeff(design)
-        basis_field = torch.einsum("bk,kno->bno", basis_coeff, self.basis_fields)
-        return self.field_bias.unsqueeze(0) + basis_field
-
-    def _decode_residual_field(self, node_tokens: Tensor) -> Tensor:
-        """
-        Decode the residual correction from refined node tokens.
-
-        Args:
-            node_tokens (Tensor): Refined node tokens. (B, N, C).
-
-        Returns:
-            Tensor: Residual field. (B, N, C_OUT).
-        """
-        return self.residual_head(self.norm(node_tokens))
-
     @torch.no_grad()
     def initialize_basis(self, design: Tensor, stress: Tensor) -> None:
         """
@@ -343,11 +302,18 @@ class StructFieldNet(nn.Module):
         Returns:
             Tensor: Predicted structural field. (B, N, C_OUT).
         """
-        coarse_field = self._decode_coarse_field(design)
-        node_tokens = self._encode_tokens(coords, design)
+        coarse_field = self.field_bias.unsqueeze(0) + torch.einsum(
+            "bk,kno->bno",
+            self.basis_coeff(design),
+            self.basis_fields,
+        )
+
+        design_tokens = self.design_encoder(design).unsqueeze(1)
+        coord_tokens = self.coord_encoder(coords)
+        node_tokens = self.fusion(design_tokens * coord_tokens)
 
         for block in self.blocks:
             node_tokens = block(node_tokens)
 
-        residual_field = self._decode_residual_field(node_tokens)
+        residual_field = self.residual_head(self.norm(node_tokens))
         return coarse_field + residual_field
