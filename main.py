@@ -248,8 +248,6 @@ def build_trainer(
         output_dir=output_dir,
         max_epochs=args.max_epochs,
         patience=args.patience,
-        gradient_clip_norm=args.gradient_clip_norm,
-        use_amp=args.use_amp,
         device=resolve_device(args.device),
     )
 

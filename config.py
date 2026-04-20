@@ -117,13 +117,6 @@ def get_args() -> argparse.Namespace:
     trainer.add_argument("--max_epochs", type=int, default=40, help="Maximum training epochs.")
     trainer.add_argument("--patience", type=int, default=6, help="Early stopping patience.")
     trainer.add_argument("--eta_min", type=float, default=1e-6, help="Minimum cosine learning rate.")
-    trainer.add_argument("--gradient_clip_norm", type=float, default=1.0, help="Gradient clipping norm.")
-    trainer.add_argument(
-        "--use_amp",
-        action=argparse.BooleanOptionalAction,
-        default=True,
-        help="Enable AMP on CUDA.",
-    )
     trainer.add_argument(
         "--compile_model",
         action=argparse.BooleanOptionalAction,
