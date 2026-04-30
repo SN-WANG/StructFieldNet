@@ -3,12 +3,18 @@
 from __future__ import annotations
 
 import os
+import shutil
+import subprocess
+import tempfile
 from pathlib import Path
-from typing import Tuple, Union
+from typing import Sequence, Tuple, Union
 
 import numpy as np
 import torch
 
+_MPL_CONFIG_DIR = Path(tempfile.gettempdir()) / "structfieldnet_mpl"
+_MPL_CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+os.environ.setdefault("MPLCONFIGDIR", str(_MPL_CONFIG_DIR))
 os.environ.setdefault("PYVISTA_OFF_SCREEN", "true")
 
 try:
@@ -64,6 +70,22 @@ class FieldVis:
             low, high = center - 1e-6, center + 1e-6
         return low, high
 
+    @staticmethod
+    def _scalar_bar_args(title: str) -> dict[str, object]:
+        """Return scalar-bar settings that keep labels inside each panel."""
+        return {
+            "title": title,
+            "vertical": True,
+            "position_x": 0.80,
+            "position_y": 0.08,
+            "width": 0.035,
+            "height": 0.42,
+            "title_font_size": 12,
+            "label_font_size": 11,
+            "fmt": "%.2e",
+            "n_labels": 5,
+        }
+
     def _add_panel(
         self,
         plotter: "pv.Plotter",
@@ -85,7 +107,7 @@ class FieldVis:
             clim=clim,
             render_points_as_spheres=True,
             point_size=self.point_size,
-            scalar_bar_args={"title": title, "vertical": True},
+            scalar_bar_args=self._scalar_bar_args(title),
         )
         plotter.add_text(title, font_size=16)
         plotter.view_isometric()
@@ -127,4 +149,54 @@ class FieldVis:
         plotter.link_views()
         plotter.screenshot(str(output_path), scale=self.screenshot_scale)
         plotter.close()
+        return output_path
+
+    @staticmethod
+    def save_comparison_movie(
+        frame_paths: Sequence[Union[str, Path]],
+        output_path: Union[str, Path],
+        fps: float = 2.0,
+    ) -> Path:
+        """
+        Save an MP4 animation from all rendered comparison figures.
+
+        Args:
+            frame_paths: Ordered comparison image paths.
+            output_path: Output MP4 path.
+            fps: Video frame rate.
+
+        Returns:
+            Saved MP4 path.
+        """
+        output_path = Path(output_path)
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        frame_paths = [Path(path) for path in frame_paths]
+
+        with tempfile.TemporaryDirectory(prefix="structfieldnet_movie_") as temp_name:
+            temp_dir = Path(temp_name)
+            loop_paths = frame_paths + frame_paths[:1]
+            for frame_idx, frame_path in enumerate(loop_paths):
+                shutil.copyfile(frame_path, temp_dir / f"frame_{frame_idx:05d}.png")
+
+            command = [
+                "ffmpeg",
+                "-y",
+                "-loglevel",
+                "error",
+                "-framerate",
+                f"{fps:g}",
+                "-i",
+                str(temp_dir / "frame_%05d.png"),
+                "-vf",
+                "pad=ceil(iw/2)*2:ceil(ih/2)*2",
+                "-c:v",
+                "libx264",
+                "-pix_fmt",
+                "yuv420p",
+                "-movflags",
+                "+faststart",
+                str(output_path),
+            ]
+            subprocess.run(command, check=True)
+
         return output_path

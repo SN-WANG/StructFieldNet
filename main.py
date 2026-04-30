@@ -255,6 +255,7 @@ def inference_pipeline(args: Namespace) -> None:
     coord_scaler = scalers.get("coord_scaler")
     stress_scaler = scalers.get("stress_scaler")
     case_metrics = {}
+    comparison_paths = []
     with torch.no_grad():
         for batch in test_loader:
             case_name = batch["case_name"][0]
@@ -278,7 +279,21 @@ def inference_pipeline(args: Namespace) -> None:
 
             torch.save(pred, output_dir / f"{case_name}_pred.pt")
             if visualizer is not None:
-                visualizer.compare_fields(gt=target, pred=pred, coords=coords, case_name=case_name)
+                comparison_path = visualizer.compare_fields(
+                    gt=target,
+                    pred=pred,
+                    coords=coords,
+                    case_name=case_name,
+                )
+                comparison_paths.append(comparison_path)
+
+    if visualizer is not None and args.render_video:
+        movie_path = visualizer.save_comparison_movie(
+            frame_paths=comparison_paths,
+            output_path=output_dir / "inference_comparison_loop.mp4",
+            fps=args.video_fps,
+        )
+        logger.info(f"saved inference animation: {hue.b}{movie_path.name}{hue.q}")
 
     with open(output_dir / "test_metrics.json", "w", encoding="utf-8") as file:
         json.dump(case_metrics, file, indent=2)

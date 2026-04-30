@@ -4,29 +4,31 @@
 [![Python](https://img.shields.io/badge/Python-3.10%2B-blue)](https://www.python.org/)
 [![License](https://img.shields.io/badge/License-MIT-yellow)](LICENSE)
 
-**StructFieldNet** is the structural-field repository in the WSNet family. It inherits the same lightweight model, training, and utility foundations from [WSNet](https://github.com/SN-WANG/WSNet), while focusing on fixed-mesh stress field reconstruction from grouped design parameters.
+**StructFieldNet** is the structural-field repository in the WSNet family. It keeps the fixed-mesh stress-field reconstruction workflow local to this repository while reusing the lightweight training, normalization, and utility style of [WSNet](https://github.com/SN-WANG/WSNet).
 
 ## 📌 Overview
 
 StructFieldNet keeps the full workflow for this task in one place:
-dataset handling, model training, case-wise inference, visualization, and metric export.
+dataset handling, memory probing, model training, case-wise inference, visualization, video export, and metric export.
 
 The current scope includes:
 
-- design-conditioned structural field reconstruction
-- fixed-mesh stress prediction
+- design-conditioned structural stress-field reconstruction
+- fixed-mesh full-field stress prediction
 - end-to-end training and inference workflows
-- case-wise visualization and diagnostic metrics
+- case-wise comparison visualization and MP4 animation
+- diagnostic metrics for full-field and hotspot reconstruction quality
 
 ## ✨ Highlights
 
-- Full-field stress reconstruction from grouped structural design parameters
 - `StructFieldNet` as the main model for fixed-mesh structural learning
 - Unified `main.py` workflow for probe, train, and infer
-- Deterministic dataset splitting and normalization pipeline
-- Stable MSE training with mixed precision, gradient clipping, and checkpointing
+- Deterministic train, validation, and test splitting with reusable split manifests
+- Coordinate, design, and stress normalization restored from checkpoints during inference
+- Stable MSE training with mixed precision, gradient clipping, cosine scheduling, and checkpointing
 - Case-wise evaluation with `mse`, `rmse`, `mae`, `r2`, `accuracy`, and hotspot-oriented metrics
 - PyVista comparison figures for ground truth, prediction, and absolute error
+- MP4 comparison loop across all inferred test cases
 
 ## 🧱 Repository Layout
 
@@ -62,11 +64,13 @@ git clone https://github.com/SN-WANG/StructFieldNet.git
 cd StructFieldNet
 ```
 
-### Install the project requirements
+### Install the dependencies you need
 
 ```bash
-pip install -r requirements.txt
+pip install numpy torch matplotlib tqdm pyvista pillow
 ```
+
+MP4 rendering uses system `ffmpeg`. Make sure `ffmpeg` is on `PATH`.
 
 ### Probe GPU memory before training
 
@@ -77,22 +81,27 @@ python main.py --mode probe --data_dir ./dataset --output_dir ./runs
 ### Train StructFieldNet
 
 ```bash
-python main.py \
-  --mode train \
-  --data_dir ./dataset \
-  --output_dir ./runs
+python main.py --mode train --data_dir ./dataset --output_dir ./runs
 ```
 
 ### Run inference and generate visualizations
 
 ```bash
-python main.py \
-  --mode infer \
-  --data_dir ./dataset \
-  --output_dir ./runs
+python main.py --mode infer --data_dir ./dataset --output_dir ./runs
+```
+
+This writes per-case comparison figures and, by default, a global MP4 loop across all inferred test cases.
+
+### Run the full workflow
+
+```bash
+python main.py --mode probe train infer --data_dir ./dataset --output_dir ./runs
 ```
 
 ## 📂 Expected Data Format
+
+The default workflow expects fixed-mesh structural cases named `dp<label>.pt`.
+All samples are assumed to share one reference mesh coordinate tensor.
 
 ```text
 dataset/
@@ -105,10 +114,28 @@ dataset/
 Each case file should be a PyTorch dictionary containing:
 
 - `coords`: tensor of shape `(N, 3)`
-- `design`: tensor of shape `(25,)`
-- `stress`: tensor of shape `(N, 1)`
+- `design`: tensor of shape `(25,)` with grouped structural design parameters
+- `stress`: tensor of shape `(N, 1)` with the nodal scalar stress field
 
-All samples are assumed to share the same reference mesh coordinates.
+## 🧾 Workflow Outputs
+
+```text
+runs/
+├── ckpt.pt
+├── best.pt
+├── config.json
+├── splits.json
+├── history.json
+├── test_metrics.json
+├── test_summary.json
+├── training_curve.png
+├── metrics_summary.png
+├── dp<label>_pred.pt
+├── dp<label>_comparison.png
+└── inference_comparison_loop.mp4
+```
+
+Checkpoints store model arguments, split metadata, and data metadata in `params`, while coordinate, design, and stress scalers are stored separately in `scaler_state_dict`.
 
 ## 🔗 Relationship to WSNet
 

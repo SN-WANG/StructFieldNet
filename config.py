@@ -159,6 +159,13 @@ def get_args() -> argparse.Namespace:
         default=True,
         help="Render training and metrics summary plots.",
     )
+    visualization.add_argument(
+        "--render_video",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Render an MP4 animation from all per-case comparison figures.",
+    )
+    visualization.add_argument("--video_fps", type=float, default=2.0, help="Frame rate for the MP4 animation.")
     visualization.add_argument("--render_point_size", type=float, default=7.0, help="Point size in visualization.")
     visualization.add_argument("--screenshot_scale", type=int, default=1, help="Screenshot resolution scale.")
 
