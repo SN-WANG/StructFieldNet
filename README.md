@@ -9,25 +9,27 @@
 ## 📌 Overview
 
 StructFieldNet keeps the full workflow for this task in one place:
-dataset handling, memory probing, model training, case-wise inference, visualization, video export, and metric export.
+dataset handling, memory probing, model training, case-wise inference, classical baselines, visualization, video export,
+and metric export.
 
 The current scope includes:
 
 - design-conditioned structural stress-field reconstruction
 - fixed-mesh full-field stress prediction
 - end-to-end training and inference workflows
+- mean-field, design-nearest-neighbor, and PCA-linear comparison baselines
 - case-wise comparison visualization and MP4 animation
 - diagnostic metrics for full-field and hotspot reconstruction quality
 
 ## ✨ Highlights
 
 - `StructFieldNet` as the main model for fixed-mesh structural learning
-- Unified `main.py` workflow for probe, train, and infer
+- Unified `main.py` workflow for probe, train, infer, and baselines
 - Deterministic train, validation, and test splitting with reusable split manifests
 - Coordinate, design, and stress normalization restored from checkpoints during inference
 - Stable MSE training with mixed precision, gradient clipping, cosine scheduling, and checkpointing
-- Case-wise evaluation with `mse`, `rmse`, `mae`, `r2`, `accuracy`, and hotspot-oriented metrics
-- PyVista comparison figures for ground truth, prediction, and absolute error
+- Case-wise evaluation with `mse`, `rmse`, `mae`, `r2`, `accuracy`, hotspot IoU, and peak-stress error
+- PyVista comparison figures for reference, prediction, and absolute error in MPa
 - MP4 comparison loop across all inferred test cases
 
 ## 🧱 Repository Layout
@@ -37,11 +39,11 @@ StructFieldNet/
 ├── main.py                  # Unified entry point for probe / train / infer
 ├── config.py                # Command-line arguments and experiment configuration
 ├── models/
+│   ├── baselines.py
 │   └── fieldnet.py
 ├── data/
 │   ├── field_data.py
 │   ├── field_metrics.py
-│   ├── field_plot.py
 │   └── field_vis.py
 ├── training/
 │   ├── base_trainer.py
@@ -92,10 +94,18 @@ python main.py --mode infer --data_dir ./dataset --output_dir ./runs
 
 This writes per-case comparison figures and, by default, a global MP4 loop across all inferred test cases.
 
+### Run classical comparison baselines
+
+```bash
+python main.py --mode baselines --data_dir ./dataset --output_dir ./runs
+```
+
+This writes mean-field, design-nearest-neighbor, and PCA-linear metrics with the same split and normalization setup.
+
 ### Run the full workflow
 
 ```bash
-python main.py --mode probe train infer --data_dir ./dataset --output_dir ./runs
+python main.py --mode probe train infer baselines --data_dir ./dataset --output_dir ./runs
 ```
 
 ## 📂 Expected Data Format
@@ -121,18 +131,24 @@ Each case file should be a PyTorch dictionary containing:
 
 ```text
 runs/
-├── ckpt.pt
 ├── best.pt
-├── config.json
-├── splits.json
+├── ckpt.pt
 ├── history.json
-├── test_metrics.json
-├── test_summary.json
-├── training_curve.png
-├── metrics_summary.png
-├── dp<label>_pred.pt
-├── dp<label>_comparison.png
-└── inference_comparison_loop.mp4
+├── inference_comparison_loop.mp4
+├── predictions/
+│   └── dp<label>_pred.pt
+└── paper_results/
+    ├── splits.json
+    ├── test_metrics.json
+    ├── test_summary.json
+    ├── test_summary_paper.json
+    ├── mean_field_test_metrics.json
+    ├── design_nn_test_metrics.json
+    ├── pca_linear_test_metrics.json
+    ├── baseline_test_summary_paper.json
+    ├── comparison_test_summary_paper.json
+    └── comparisons/
+        └── dp<label>_comparison.png
 ```
 
 Checkpoints store model arguments, split metadata, and data metadata in `params`, while coordinate, design, and stress scalers are stored separately in `scaler_state_dict`.

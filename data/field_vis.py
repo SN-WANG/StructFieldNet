@@ -29,22 +29,13 @@ class FieldVis:
     def __init__(
         self,
         output_dir: Union[str, Path],
-        off_screen: bool = True,
-        window_size: Tuple[int, int] = (2200, 760),
-        point_size: float = 7.0,
-        screenshot_scale: int = 1,
-        theme: str = "document",
     ) -> None:
         if pv is None:
             raise ImportError("PyVista is required for field visualization.")
 
         self.output_dir = Path(output_dir)
         self.output_dir.mkdir(parents=True, exist_ok=True)
-        self.off_screen = off_screen
-        self.window_size = window_size
-        self.point_size = point_size
-        self.screenshot_scale = screenshot_scale
-        pv.set_plot_theme(theme)
+        pv.set_plot_theme("document")
 
     @staticmethod
     def _to_numpy(x: Union[np.ndarray, torch.Tensor]) -> np.ndarray:
@@ -70,11 +61,10 @@ class FieldVis:
             low, high = center - 1e-6, center + 1e-6
         return low, high
 
-    @staticmethod
-    def _scalar_bar_args(title: str) -> dict[str, object]:
+    def _scalar_bar_args(self, title: str) -> dict[str, object]:
         """Return scalar-bar settings that keep labels inside each panel."""
         return {
-            "title": title,
+            "title": f"{title} (MPa)",
             "vertical": True,
             "position_x": 0.80,
             "position_y": 0.08,
@@ -82,7 +72,7 @@ class FieldVis:
             "height": 0.42,
             "title_font_size": 12,
             "label_font_size": 11,
-            "fmt": "%.2e",
+            "fmt": "%.2f",
             "n_labels": 5,
         }
 
@@ -106,10 +96,10 @@ class FieldVis:
             cmap=cmap,
             clim=clim,
             render_points_as_spheres=True,
-            point_size=self.point_size,
+            point_size=7.0,
             scalar_bar_args=self._scalar_bar_args(title),
         )
-        plotter.add_text(title, font_size=16)
+        plotter.add_text(title, position="upper_edge", font_size=16)
         plotter.view_isometric()
         plotter.camera.zoom(1.18)
 
@@ -132,22 +122,22 @@ class FieldVis:
             Saved figure path.
         """
         points = self._prepare_points(coords)
-        gt_array = self._to_numpy(gt).reshape(-1)
-        pred_array = self._to_numpy(pred).reshape(-1)
+        gt_array = self._to_numpy(gt).reshape(-1) * 1.0e-6
+        pred_array = self._to_numpy(pred).reshape(-1) * 1.0e-6
         error_array = np.abs(pred_array - gt_array)
 
         shared_clim = self._percentile_clim(np.concatenate([gt_array, pred_array], axis=0))
         error_clim = self._percentile_clim(error_array, q_low=0.0, q_high=98.0)
 
         output_path = self.output_dir / f"{case_name}_comparison.png"
-        plotter = pv.Plotter(shape=(1, 3), off_screen=self.off_screen, window_size=self.window_size)
+        plotter = pv.Plotter(shape=(1, 3), off_screen=True, window_size=(2105, 587), border=False)
 
-        self._add_panel(plotter, 0, points, gt_array, "Ground Truth", "viridis", shared_clim)
+        self._add_panel(plotter, 0, points, gt_array, "Reference", "viridis", shared_clim)
         self._add_panel(plotter, 1, points, pred_array, "Prediction", "viridis", shared_clim)
-        self._add_panel(plotter, 2, points, error_array, "Absolute Error", "Reds", error_clim)
+        self._add_panel(plotter, 2, points, error_array, "Absolute error", "Reds", error_clim)
 
         plotter.link_views()
-        plotter.screenshot(str(output_path), scale=self.screenshot_scale)
+        plotter.screenshot(str(output_path), scale=1)
         plotter.close()
         return output_path
 
@@ -155,7 +145,6 @@ class FieldVis:
     def save_comparison_movie(
         frame_paths: Sequence[Union[str, Path]],
         output_path: Union[str, Path],
-        fps: float = 2.0,
     ) -> Path:
         """
         Save an MP4 animation from all rendered comparison figures.
@@ -163,7 +152,6 @@ class FieldVis:
         Args:
             frame_paths: Ordered comparison image paths.
             output_path: Output MP4 path.
-            fps: Video frame rate.
 
         Returns:
             Saved MP4 path.
@@ -184,7 +172,7 @@ class FieldVis:
                 "-loglevel",
                 "error",
                 "-framerate",
-                f"{fps:g}",
+                "2",
                 "-i",
                 str(temp_dir / "frame_%05d.png"),
                 "-vf",

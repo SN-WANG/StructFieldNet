@@ -4,6 +4,7 @@
 import json
 from argparse import Namespace
 from pathlib import Path
+from typing import Dict
 
 import torch
 from torch import nn
@@ -21,10 +22,84 @@ from data.field_data import (
     save_split_manifest,
 )
 from data.field_metrics import FieldMetrics
+from models.baselines import DesignNearestNeighborBaseline, MeanFieldBaseline, PCALinearBaseline
 from models.fieldnet import StructFieldNet
 from training.field_trainer import FieldTrainer
 from utils.hue_logger import hue, logger
 from utils.seeder import seed_everything
+
+
+def _summarize_case_metrics(case_metrics: Dict[str, Dict[str, float]]) -> Dict[str, float]:
+    """
+    Average per-case metric dictionaries.
+
+    Args:
+        case_metrics (Dict[str, Dict[str, float]]): Per-case metrics.
+
+    Returns:
+        Dict[str, float]: Mean metrics over cases.
+    """
+    metric_names = sorted(next(iter(case_metrics.values())).keys())
+    return {
+        metric_name: float(sum(item[metric_name] for item in case_metrics.values()) / len(case_metrics))
+        for metric_name in metric_names
+    }
+
+
+def _run_paths(output_dir: Path) -> Dict[str, Path]:
+    """
+    Build the fixed output paths for one run directory.
+
+    Args:
+        output_dir (Path): Run root directory.
+
+    Returns:
+        Dict[str, Path]: Structured output paths.
+    """
+    paper_dir = output_dir / "paper_results"
+    return {
+        "paper": paper_dir,
+        "predictions": output_dir / "predictions",
+        "comparisons": paper_dir / "comparisons",
+        "splits": paper_dir / "splits.json",
+    }
+
+
+def _prepare_run_dirs(output_dir: Path) -> Dict[str, Path]:
+    """
+    Create the structured output directories.
+
+    Args:
+        output_dir (Path): Run root directory.
+
+    Returns:
+        Dict[str, Path]: Structured output paths.
+    """
+    paths = _run_paths(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    paths["paper"].mkdir(parents=True, exist_ok=True)
+    paths["predictions"].mkdir(parents=True, exist_ok=True)
+    paths["comparisons"].mkdir(parents=True, exist_ok=True)
+    return paths
+
+
+def _paper_summary(summary: Dict[str, float]) -> Dict[str, float]:
+    """
+    Convert raw metric summary into paper-facing units.
+
+    Args:
+        summary (Dict[str, float]): Raw metric summary.
+
+    Returns:
+        Dict[str, float]: Compact table metrics.
+    """
+    return {
+        "rmse": summary["rmse"] * 1.0e-6,
+        "mae": summary["mae"] * 1.0e-6,
+        "r2": summary["r2"],
+        "hotspot_iou": summary["hotspot_iou"],
+        "peak_mape": summary["peak_rel_error"],
+    }
 
 
 def train_pipeline(args: Namespace) -> None:
@@ -38,14 +113,14 @@ def train_pipeline(args: Namespace) -> None:
     seed_everything(args.seed)
 
     output_dir = Path(args.output_dir)
-    output_dir.mkdir(parents=True, exist_ok=True)
+    paths = _prepare_run_dirs(output_dir)
 
     device_name = args.device
     if device_name.startswith("cuda") and not torch.cuda.is_available():
         logger.warning("CUDA is unavailable, falling back to CPU.")
         device_name = "cpu"
 
-    split_path = output_dir / "splits.json"
+    split_path = paths["splits"]
     if split_path.exists():
         logger.info("loading existing split manifest...")
         split_manifest = load_split_manifest(split_path)
@@ -116,9 +191,7 @@ def train_pipeline(args: Namespace) -> None:
         "split_manifest": split_manifest,
         "data_meta": train_data.meta.__dict__,
     }
-    with open(output_dir / "config.json", "w", encoding="utf-8") as file:
-        json.dump(vars(args), file, indent=2)
-    save_split_manifest(split_manifest, output_dir / "splits.json")
+    save_split_manifest(split_manifest, paths["splits"])
 
     optimizer = AdamW(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
     scheduler = CosineAnnealingLR(optimizer, T_max=args.max_epochs, eta_min=args.eta_min)
@@ -147,7 +220,7 @@ def inference_pipeline(args: Namespace) -> None:
     logger.info(f"{hue.c}============================= [INFER PIPELINE] START =============================={hue.q}")
 
     output_dir = Path(args.output_dir)
-    output_dir.mkdir(parents=True, exist_ok=True)
+    paths = _prepare_run_dirs(output_dir)
 
     device_name = args.device
     if device_name.startswith("cuda") and not torch.cuda.is_available():
@@ -177,7 +250,7 @@ def inference_pipeline(args: Namespace) -> None:
         stress_channel_dim=args.stress_channel_dim,
     )
 
-    split_path = output_dir / "splits.json"
+    split_path = paths["splits"]
     if split_path.exists():
         logger.info("loading existing split manifest...")
         split_manifest = load_split_manifest(split_path)
@@ -240,17 +313,9 @@ def inference_pipeline(args: Namespace) -> None:
     model.eval()
 
     metrics = FieldMetrics(hotspot_percentile=args.hotspot_percentile)
-    if args.render_visualization:
-        from data.field_vis import FieldVis
+    from data.field_vis import FieldVis
 
-        visualizer = FieldVis(
-            output_dir=output_dir,
-            off_screen=args.off_screen,
-            point_size=args.render_point_size,
-            screenshot_scale=args.screenshot_scale,
-        )
-    else:
-        visualizer = None
+    visualizer = FieldVis(output_dir=paths["comparisons"])
 
     coord_scaler = scalers.get("coord_scaler")
     stress_scaler = scalers.get("stress_scaler")
@@ -277,42 +342,29 @@ def inference_pipeline(args: Namespace) -> None:
                 f"ACC={hue.m}{metric_values['accuracy']:.2f}%{hue.q}"
             )
 
-            torch.save(pred, output_dir / f"{case_name}_pred.pt")
-            if visualizer is not None:
-                comparison_path = visualizer.compare_fields(
-                    gt=target,
-                    pred=pred,
-                    coords=coords,
-                    case_name=case_name,
-                )
-                comparison_paths.append(comparison_path)
+            torch.save(pred, paths["predictions"] / f"{case_name}_pred.pt")
+            comparison_path = visualizer.compare_fields(
+                gt=target,
+                pred=pred,
+                coords=coords,
+                case_name=case_name,
+            )
+            comparison_paths.append(comparison_path)
 
-    if visualizer is not None and args.render_video:
-        movie_path = visualizer.save_comparison_movie(
-            frame_paths=comparison_paths,
-            output_path=output_dir / "inference_comparison_loop.mp4",
-            fps=args.video_fps,
-        )
-        logger.info(f"saved inference animation: {hue.b}{movie_path.name}{hue.q}")
+    movie_path = visualizer.save_comparison_movie(
+        frame_paths=comparison_paths,
+        output_path=output_dir / "inference_comparison_loop.mp4",
+    )
+    logger.info(f"saved inference animation: {hue.b}{movie_path.name}{hue.q}")
 
-    with open(output_dir / "test_metrics.json", "w", encoding="utf-8") as file:
+    with open(paths["paper"] / "test_metrics.json", "w", encoding="utf-8") as file:
         json.dump(case_metrics, file, indent=2)
 
-    metric_names = sorted(next(iter(case_metrics.values())).keys())
-    summary = {
-        metric_name: float(sum(item[metric_name] for item in case_metrics.values()) / len(case_metrics))
-        for metric_name in metric_names
-    }
-    with open(output_dir / "test_summary.json", "w", encoding="utf-8") as file:
+    summary = _summarize_case_metrics(case_metrics)
+    with open(paths["paper"] / "test_summary.json", "w", encoding="utf-8") as file:
         json.dump(summary, file, indent=2)
-
-    if args.render_metric_plots:
-        from data.field_plot import plot_metrics_summary, plot_training_curves
-
-        history_path = output_dir / "history.json"
-        if history_path.exists():
-            plot_training_curves(history_path, output_dir / "training_curve.png")
-        plot_metrics_summary(output_dir / "test_metrics.json", output_dir / "metrics_summary.png")
+    with open(paths["paper"] / "test_summary_paper.json", "w", encoding="utf-8") as file:
+        json.dump(_paper_summary(summary), file, indent=2)
 
     logger.info(
         f"{hue.g}test summary{hue.q} | "
@@ -321,6 +373,106 @@ def inference_pipeline(args: Namespace) -> None:
         f"ACC={hue.m}{summary['accuracy']:.2f}%{hue.q}"
     )
     logger.info(f"{hue.g}============================== [INFER PIPELINE] END ==============================={hue.q}")
+
+
+def baselines_pipeline(args: Namespace) -> None:
+    """
+    Run classical comparison baselines on the shared test split.
+
+    Args:
+        args (Namespace): Parsed experiment arguments.
+    """
+    logger.info(f"{hue.c}============================ [BASELINES PIPELINE] START ============================{hue.q}")
+    seed_everything(args.seed)
+
+    output_dir = Path(args.output_dir)
+    paths = _prepare_run_dirs(output_dir)
+
+    split_path = paths["splits"]
+    if split_path.exists():
+        logger.info("loading existing split manifest...")
+        split_manifest = load_split_manifest(split_path)
+    else:
+        split_manifest = build_case_splits(
+            data_dir=args.data_dir,
+            train_ratio=args.train_ratio,
+            val_ratio=args.val_ratio,
+            test_ratio=args.test_ratio,
+            seed=args.seed,
+        )
+        save_split_manifest(split_manifest, split_path)
+
+    dataset = FieldData.from_directory(data_dir=args.data_dir, verify_fixed_mesh=args.verify_fixed_mesh)
+    train_data, _, test_data = dataset.split(split_manifest)
+    scalers = fit_scalers(
+        dataset=train_data,
+        coord_norm_range=args.coord_norm_range,
+        normalize_design=args.normalize_design,
+        normalize_stress=args.normalize_stress,
+        stress_channel_dim=args.stress_channel_dim,
+    )
+
+    design_scaler = scalers.get("design_scaler")
+    stress_scaler = scalers.get("stress_scaler")
+    train_design = design_scaler.transform(train_data.designs) if design_scaler is not None else train_data.designs
+    test_design = design_scaler.transform(test_data.designs) if design_scaler is not None else test_data.designs
+    train_stress = stress_scaler.transform(train_data.stresses) if stress_scaler is not None else train_data.stresses
+
+    baselines = [
+        MeanFieldBaseline(),
+        DesignNearestNeighborBaseline(),
+        PCALinearBaseline(num_bases=args.num_bases),
+    ]
+    metrics = FieldMetrics(hotspot_percentile=args.hotspot_percentile)
+    baseline_summaries: Dict[str, Dict[str, float]] = {}
+    paper_summaries: Dict[str, Dict[str, float]] = {}
+
+    for baseline in baselines:
+        logger.info(f"evaluating baseline: {hue.b}{baseline.name}{hue.q}")
+        baseline.fit(train_design, train_stress)
+        pred_scaled = baseline.predict(test_design)
+        pred = stress_scaler.inverse_transform(pred_scaled) if stress_scaler is not None else pred_scaled
+
+        case_metrics = {}
+        for case_idx, case_name in enumerate(test_data.case_names):
+            metric_values = metrics.compute(pred[case_idx], test_data.stresses[case_idx])
+            case_metrics[case_name] = metric_values
+
+        summary = _summarize_case_metrics(case_metrics)
+        paper_summary = _paper_summary(summary)
+        baseline_summaries[baseline.name] = summary
+        paper_summaries[baseline.name] = paper_summary
+
+        with open(paths["paper"] / f"{baseline.name}_test_metrics.json", "w", encoding="utf-8") as file:
+            json.dump(case_metrics, file, indent=2)
+        with open(paths["paper"] / f"{baseline.name}_test_summary.json", "w", encoding="utf-8") as file:
+            json.dump(summary, file, indent=2)
+        with open(paths["paper"] / f"{baseline.name}_test_summary_paper.json", "w", encoding="utf-8") as file:
+            json.dump(paper_summary, file, indent=2)
+
+        logger.info(
+            f"{baseline.name} | "
+            f"RMSE={hue.m}{paper_summary['rmse']:.4f}{hue.q}, "
+            f"MAE={hue.m}{paper_summary['mae']:.4f}{hue.q}, "
+            f"R2={hue.m}{paper_summary['r2']:.4f}{hue.q}, "
+            f"IoU={hue.m}{paper_summary['hotspot_iou']:.4f}{hue.q}, "
+            f"Peak={hue.m}{paper_summary['peak_mape']:.2f}%{hue.q}"
+        )
+
+    with open(paths["paper"] / "baseline_test_summary.json", "w", encoding="utf-8") as file:
+        json.dump(baseline_summaries, file, indent=2)
+    with open(paths["paper"] / "baseline_test_summary_paper.json", "w", encoding="utf-8") as file:
+        json.dump(paper_summaries, file, indent=2)
+
+    comparison_summary = dict(paper_summaries)
+    struct_summary_path = paths["paper"] / "test_summary_paper.json"
+    if struct_summary_path.exists():
+        with open(struct_summary_path, "r", encoding="utf-8") as file:
+            comparison_summary["structfieldnet"] = json.load(file)
+    with open(paths["paper"] / "comparison_test_summary_paper.json", "w", encoding="utf-8") as file:
+        json.dump(comparison_summary, file, indent=2)
+
+    logger.info(f"{hue.g}============================= [BASELINES PIPELINE] END ============================={hue.q}")
 
 
 def probe_pipeline(args: Namespace) -> None:
@@ -333,7 +485,7 @@ def probe_pipeline(args: Namespace) -> None:
     logger.info(f"{hue.c}============================= [PROBE PIPELINE] START =============================={hue.q}")
 
     output_dir = Path(args.output_dir)
-    output_dir.mkdir(parents=True, exist_ok=True)
+    paths = _prepare_run_dirs(output_dir)
 
     device_name = args.device
     if device_name.startswith("cuda") and not torch.cuda.is_available():
@@ -347,7 +499,7 @@ def probe_pipeline(args: Namespace) -> None:
 
     seed_everything(args.seed)
 
-    split_path = output_dir / "splits.json"
+    split_path = paths["splits"]
     if split_path.exists():
         logger.info("loading existing split manifest...")
         split_manifest = load_split_manifest(split_path)
@@ -469,3 +621,6 @@ if __name__ == "__main__":
 
     if "infer" in args.mode:
         inference_pipeline(args)
+
+    if "baselines" in args.mode:
+        baselines_pipeline(args)

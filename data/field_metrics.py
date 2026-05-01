@@ -52,6 +52,11 @@ class FieldMetrics:
         hotspot_intersection = (hotspot_pred & hotspot_target).sum()
         hotspot_iou = hotspot_intersection.float() / (hotspot_union.float() + self.eps)
 
+        pred_peak = torch.max(pred_flat)
+        target_peak = torch.max(target_flat)
+        peak_abs_error = torch.abs(pred_peak - target_peak)
+        peak_rel_error = peak_abs_error / (torch.abs(target_peak) + self.eps) * 100.0
+
         return {
             "mse": float(mse.item()),
             "rmse": float(rmse.item()),
@@ -60,4 +65,6 @@ class FieldMetrics:
             "accuracy": float(accuracy.item()),
             "max_error": float(max_error.item()),
             "hotspot_iou": float(hotspot_iou.item()),
+            "peak_abs_error": float(peak_abs_error.item()),
+            "peak_rel_error": float(peak_rel_error.item()),
         }
